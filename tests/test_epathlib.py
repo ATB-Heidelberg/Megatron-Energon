@@ -8,10 +8,14 @@ import multiprocessing
 import os
 import pickle
 import struct
+import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import PurePosixPath
 
 from megatron.energon.epathlib import EPath
+from megatron.energon.epathlib.epath import _local_os_path
 from tests.epath_s3_emulator import setup_s3_emulator
 
 
@@ -276,6 +280,38 @@ class TestEPath(unittest.TestCase):
             assert not p.is_file()
             # assert not EPath("msc://s3test_msc/test").is_dir()
             assert not EPath("msc://s3test_msc/test/dir").is_dir()
+
+    def test_local_without_msc(self):
+        """Local paths work without MSC installed, as on Windows"""
+        script = (
+            "import sys, tempfile\n"
+            "sys.modules['multistorageclient'] = None\n"
+            "from megatron.energon.epathlib import EPath\n"
+            "root = EPath(tempfile.mkdtemp())\n"
+            "(root / 'sub/file.txt').write_text('content')\n"
+            "(root / 'sub').copy(root / 'copy')\n"
+            "assert (root / 'copy/file.txt').read_text() == 'content'\n"
+            "assert sorted(p.name for p in root.glob('**/*.txt')) == ['file.txt', 'file.txt']\n"
+        )
+        subprocess.run([sys.executable, "-c", script], check=True)
+
+    def test_local_write_creates_parents(self):
+        """Writing a local file creates its parent folders, and copying copies whole folders"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = EPath(tmp_dir) / "a/b/file.bin"
+            source.write_bytes(b"content")
+            (EPath(tmp_dir) / "a").copy(EPath(tmp_dir) / "c")
+            assert (EPath(tmp_dir) / "c/b/file.bin").read_bytes() == b"content"
+            assert (EPath(tmp_dir) / "c/b").is_dir()
+            assert (EPath(tmp_dir) / "c/b/file.bin").size() == 7
+
+    def test_windows_paths(self):
+        """Windows drive paths lose the leading slash they are stored with; UNC paths keep theirs"""
+        assert _local_os_path("/C:/data/file.txt", windows=True) == "C:/data/file.txt"
+        assert _local_os_path("/C:/data/file.txt", windows=False) == "/C:/data/file.txt"
+        assert _local_os_path("//server/share/file.txt", windows=True) == "//server/share/file.txt"
+        assert EPath._resolve("//server/share/a/../b") == PurePosixPath("//server/share/b")
+        assert EPath._resolve("/C:/data/../file.txt") == PurePosixPath("/C:/file.txt")
 
 
 def _multiproc_test_func(p: EPath, test_function: bool):
