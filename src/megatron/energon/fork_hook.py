@@ -183,8 +183,10 @@ class DataclassForkMixin:
         pass
 
 
-os.register_at_fork(
-    before=_before_fork_hooks.run,
-    after_in_child=_after_in_child_fork_hooks.run,
-    after_in_parent=_after_in_parent_fork_hooks.run,
-)
+# Windows has no fork, so its worker processes are spawned and the hooks have nothing to run on
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(
+        before=_before_fork_hooks.run,
+        after_in_child=_after_in_child_fork_hooks.run,
+        after_in_parent=_after_in_parent_fork_hooks.run,
+    )
