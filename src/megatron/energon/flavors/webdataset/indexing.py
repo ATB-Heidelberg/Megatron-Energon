@@ -1,6 +1,7 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.
 # SPDX-License-Identifier: BSD-3-Clause
 
+import os
 import sqlite3
 import struct
 from pathlib import Path
@@ -47,7 +48,7 @@ class SqliteIndexWriter:
         path = str(self.sqlite_path)
         # Only supporting local file system, because sqlite does not support remote file systems.
         # TODO: Implement remote file systems. Maybe create locally in tmp then upload?
-        assert path.startswith("/"), (
+        assert os.path.isabs(path), (
             f"SQLite path must be absolute local file system path: {self.sqlite_path}"
         )
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -261,11 +262,13 @@ class SqliteIndexReader:
         # Initialize SQLite connection
         path = str(self.sqlite_path)
         # Only supporting local file system, because sqlite does not support remote file systems
-        assert path.startswith("/"), (
+        assert os.path.isabs(path), (
             f"SQLite path must be absolute local file system path: {self.sqlite_path}"
         )
 
-        path = f"file:{path}?mode=ro&immutable=1"
+        # as_uri escapes what SQLite would read as URI delimiters, e.g. "#", and gives
+        # "file:///C:/..." on Windows.
+        path = f"{Path(path).as_uri()}?mode=ro&immutable=1"
 
         self.db = ThreadLocalSqlite(path, is_uri=True)
 
